@@ -4,7 +4,7 @@
 
 <br/>
 
-**A fast, dependency-light Language Server for [MISA / Mnemonimov](AI%20Reference.md) assembly — written in modern C++.**
+**A fast, dependency-light Language Server for MISA / Mnemonimov assembly — written in modern C++.**
 
 <br/>
 
@@ -174,8 +174,6 @@ src/
 test/          Catch2 unit tests   ·   tools/  standalone linter
 examples/      hello.mnemo · game_skeleton.mnemo
 ```
-
-📖 Full design notes live in [**PLAN.md**](PLAN.md).
 
 ---
 
