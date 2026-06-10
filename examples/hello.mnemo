@@ -1,0 +1,8 @@
+## hello.mnemo — Minimal "Hello, World!" for Mnemonimov
+
+_start:
+    mov a0, msg
+    syscall SYS_PRINT_STRING
+    exit
+
+msg: emb string "Hello, Mnemonimov!"

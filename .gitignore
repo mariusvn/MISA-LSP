@@ -1,0 +1,49 @@
+# ── Build output ───────────────────────────────────────────────────────────────
+build/
+build-*/
+out/
+bin/
+lib/
+install/
+
+# CMake / IDE-generated build trees
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+_deps/
+Testing/
+
+# ── Compiled objects & binaries ────────────────────────────────────────────────
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+
+# ── IDE / editor / local tooling ───────────────────────────────────────────────
+.vs/
+.vscode/
+.idea/
+.claude/
+*.user
+*.suo
+*.sln
+*.vcxproj
+*.vcxproj.filters
+
+# ── OS noise ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Misc ───────────────────────────────────────────────────────────────────────
+*.log

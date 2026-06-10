@@ -1,0 +1,73 @@
+## game_skeleton.mnemo — Minimal game loop skeleton for Mnemonimov
+## Demonstrates _start / _update / _draw / _input entry points.
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+def PLAYER_SPEED  2
+def PLAYER_LUMA   200
+
+# ── Persistent game state ──────────────────────────────────────────────────────
+player_x:   emb i32t 160    # centre of screen
+player_y:   emb i32t 120
+
+# ── One-time initialisation ───────────────────────────────────────────────────
+_start:
+    # Load saved position from storage if it exists
+    # syscall SYS_STORAGE_READ
+    exit
+
+# ── Game logic (60 Hz) ────────────────────────────────────────────────────────
+_update:
+    syscall SYS_GET_INPUT       # a0 = button bitmask
+    mov s0, a0                  # save input (s0 is callee-saved; safe across yield)
+
+    lod i32t, s1, player_x
+    lod i32t, s2, player_y
+
+    # Move left / right
+    and t0, s0, BTN_LEFT
+    cmp neq, t0, 0
+    jfs .no_left
+    sub s1, PLAYER_SPEED
+.no_left:
+
+    and t0, s0, BTN_RIGHT
+    cmp neq, t0, 0
+    jfs .no_right
+    add s1, PLAYER_SPEED
+.no_right:
+
+    # Move up / down
+    and t0, s0, BTN_UP
+    cmp neq, t0, 0
+    jfs .no_up
+    sub s2, PLAYER_SPEED
+.no_up:
+
+    and t0, s0, BTN_DOWN
+    cmp neq, t0, 0
+    jfs .no_down
+    add s2, PLAYER_SPEED
+.no_down:
+
+    # Clamp to screen bounds
+    clp s1, s1, 0, SCREEN_WIDTH
+    clp s2, s2, 0, SCREEN_HEIGHT
+
+    str i32t, player_x, s1
+    str i32t, player_y, s2
+    exit
+
+# ── Rendering (60 Hz) ─────────────────────────────────────────────────────────
+_draw:
+    lod i32t, a0, player_x
+    lod i32t, a1, player_y
+    mov a2, 4       # width
+    mov a3, 4       # height
+    mov a4, PLAYER_LUMA
+    syscall SYS_DRAW_RECT
+    exit
+
+# ── Input events ──────────────────────────────────────────────────────────────
+_input:
+    # Input is polled in _update; nothing needed here.
+    exit
