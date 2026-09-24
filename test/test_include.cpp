@@ -174,6 +174,21 @@ TEST_CASE("Include: errors in an included file are summarised on the include", "
     REQUIRE(hasDiag(c.root(), DiagnosticSeverity::Warning, "'lib.asm' has 1 error(s)"));
 }
 
+TEST_CASE("Include: .misa files are MISA sources", "[include]") {
+    Project p;
+    p.add("/p/main.asm", "include \"lib.misa\"\ninclude \"notes.txt\"\n")
+     .add("/p/lib.misa", "F:\n    ret\n")
+     .add("/p/notes.txt", "");
+    auto c = p.build();
+    REQUIRE(c.files.size() == 3);
+    REQUIRE(c.root().includes[0].status == IncludeRecord::Status::Ok);
+    size_t warnings = 0;
+    for (const auto& d : c.root().diagnostics)
+        if (d.severity == DiagnosticSeverity::Warning &&
+            d.message.find("expected to be source files") != std::string::npos) ++warnings;
+    REQUIRE(warnings == 1); // only notes.txt
+}
+
 TEST_CASE("Include: case-insensitive file systems see one file", "[include]") {
     Project p(/*caseInsensitive*/ true);
     p.add("/p/main.asm", "include \"LIB.ASM\"\ninclude \"lib.asm\"\n")

@@ -222,7 +222,7 @@ _update:
 
 | | |
 |:--|:--|
-| **Files** | `.asm`, `.mnemo` · `include "path"` (recursive, each file once) |
+| **Files** | `.asm`, `.misa`, `.mnemo` · `include "path"` (recursive, each file once) |
 | **Comments** | `#` line · `##` doc-comment |
 | **Integers** | `42` · `0x2a` · `0b101010` · `0o52` · `10_000` |
 | **Characters** | `'a'` · `'misa'` (up to 4, packed big-endian) · escapes `\0 \t \n \' \" \\` |
