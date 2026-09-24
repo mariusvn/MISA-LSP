@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.2.0] — 2026-09-25
+## [1.1.0] — 2026-09-25
 
 Brings the server up to date with **Mnemonimov manual v0.1.6** and makes it understand
 multi-file programs.
@@ -85,7 +85,7 @@ multi-file programs.
   `jmp DATA.end` resolve.
 - Every reference is resolved to its definition, which makes definition, references and hover
   exact and scope-aware.
-- `serverInfo.version` is now `0.2.0`.
+- `serverInfo.version` is now `1.1.0`.
 
 ### Fixed
 
@@ -95,7 +95,7 @@ multi-file programs.
 - Signature help ignored instructions that follow a `label:` or are indented with tabs.
 - The outline dropped local labels whose global label lives in another file.
 
-## [0.1.0] — 2026-06-10
+## [1.0] — 2026-06-10
 
 ### Added
 

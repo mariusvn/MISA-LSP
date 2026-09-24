@@ -65,7 +65,7 @@ nlohmann::json Server::onInitialize(const nlohmann::json& params) {
     applySettings(params.value("initializationOptions", nlohmann::json::object()));
     return {
         {"capabilities", lsp::makeServerCapabilities()},
-        {"serverInfo", {{"name", "misa-lsp"}, {"version", "0.2.0"}}}
+        {"serverInfo", {{"name", "misa-lsp"}, {"version", "1.1.0"}}}
     };
 }
 
