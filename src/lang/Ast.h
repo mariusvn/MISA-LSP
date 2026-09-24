@@ -67,6 +67,7 @@ struct DefDirective {
     bool                 isLocal;
     ExprNode             value;
     Span                 span;
+    Span                 nameSpan;
 };
 
 struct UndefDirective {
@@ -93,6 +94,14 @@ struct BmkDirective {
     Span        span;
 };
 
+// include "<path>" — the path is kept verbatim (no escape processing).
+struct IncludeDirective {
+    std::string path;
+    bool        hasPath = false;
+    Span        pathSpan;   // the string literal, including its quotes
+    Span        span;
+};
+
 struct DocCommentStmt {
     std::string text;
     Span        span;
@@ -108,6 +117,7 @@ using Statement = std::variant<
     EmbDirective,
     ResDirective,
     BmkDirective,
+    IncludeDirective,
     DocCommentStmt,
     EmptyStmt
 >;

@@ -8,9 +8,12 @@
 #include "features/DocumentSymbols.h"
 #include "features/SignatureHelp.h"
 #include "features/Folding.h"
+#include "features/DocumentLinks.h"
 #include <nlohmann/json.hpp>
 
 namespace misa::server {
+
+Server::Server() : m_ws(std::make_unique<fs::DiskSourceProvider>()) {}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -39,13 +42,30 @@ void Server::publishDiagnostics(const std::string& uri,
         {{"uri", uri}, {"diagnostics", items}});
 }
 
+void Server::flushDiagnostics() {
+    for (const auto& p : m_ws.takePendingDiagnostics())
+        publishDiagnostics(p.uri, p.diagnostics);
+}
+
+template <typename T>
+static nlohmann::json toJsonArray(const std::vector<T>& items) {
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& item : items) {
+        nlohmann::json j;
+        lsp::to_json(j, item);
+        arr.push_back(j);
+    }
+    return arr;
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-nlohmann::json Server::onInitialize(const nlohmann::json& /*params*/) {
+nlohmann::json Server::onInitialize(const nlohmann::json& params) {
     m_initialized = true;
+    applySettings(params.value("initializationOptions", nlohmann::json::object()));
     return {
         {"capabilities", lsp::makeServerCapabilities()},
-        {"serverInfo", {{"name", "misa-lsp"}, {"version", "0.1.0"}}}
+        {"serverInfo", {{"name", "misa-lsp"}, {"version", "0.2.0"}}}
     };
 }
 
@@ -62,35 +82,58 @@ void Server::onExit(const nlohmann::json& /*params*/) {}
 
 void Server::onDidOpen(const nlohmann::json& params) {
     const auto& td = params["textDocument"];
-    std::string uri  = td.value("uri", std::string{});
-    std::string text = td.value("text", std::string{});
-    m_store.update(uri, text);
-    if (const auto* c = m_store.get(uri))
-        publishDiagnostics(uri, c->diagnostics);
+    m_ws.open(td.value("uri", std::string{}), td.value("text", std::string{}));
 }
 
 void Server::onDidChange(const nlohmann::json& params) {
-    std::string uri = getUri(params);
     const auto& changes = params["contentChanges"];
     if (!changes.is_array() || changes.empty()) return;
     // Full sync: take the last change's text
-    std::string text = changes.back().value("text", std::string{});
-    m_store.update(uri, text);
-    if (const auto* c = m_store.get(uri))
-        publishDiagnostics(uri, c->diagnostics);
+    m_ws.change(getUri(params), changes.back().value("text", std::string{}));
 }
 
 void Server::onDidClose(const nlohmann::json& params) {
-    m_store.remove(getUri(params));
+    m_ws.close(getUri(params));
+}
+
+// ── Workspace ─────────────────────────────────────────────────────────────────
+
+void Server::applySettings(const nlohmann::json& settings) {
+    if (!settings.is_object()) return;
+    // Accept both {"mnemonimov": {...}} and the bare section.
+    const nlohmann::json& s = settings.contains("mnemonimov") ? settings["mnemonimov"] : settings;
+    if (!s.is_object()) return;
+
+    fs::PathConfig detected = fs::detectDefaultPathConfig();
+    auto pick = [](const nlohmann::json& obj, const char* name, const std::string& fallback) {
+        std::string v = obj.contains(name) && obj[name].is_string() ? obj[name].get<std::string>() : "";
+        return v.empty() ? fallback : fs::normalize(v);
+    };
+    fs::PathConfig cfg;
+    cfg.userProjectsDir   = pick(s, "userProjectsPath",   detected.userProjectsDir);
+    cfg.sampleProjectsDir = pick(s, "sampleProjectsPath", detected.sampleProjectsDir);
+    m_ws.setPathConfig(std::move(cfg));
+}
+
+void Server::onDidChangeConfiguration(const nlohmann::json& params) {
+    applySettings(params.value("settings", nlohmann::json::object()));
+}
+
+void Server::onDidChangeWatchedFiles(const nlohmann::json& params) {
+    const auto changes = params.value("changes", nlohmann::json::array());
+    for (const auto& ch : changes) {
+        int type = ch.value("type", 2);
+        m_ws.fileChanged(ch.value("uri", std::string{}),
+                         static_cast<Workspace::FileChange>(type >= 1 && type <= 3 ? type : 2));
+    }
 }
 
 // ── Feature providers ─────────────────────────────────────────────────────────
 
 nlohmann::json Server::onHover(const nlohmann::json& params) {
-    std::string uri = getUri(params);
-    const auto* c = m_store.get(uri);
-    if (!c) return nullptr;
-    auto hover = features::provideHover(*c, getPosition(params));
+    auto t = m_ws.lookup(getUri(params));
+    if (!t) return nullptr;
+    auto hover = features::provideHover(*t->unit, *t->file, getPosition(params));
     if (!hover) return nullptr;
     nlohmann::json j;
     lsp::to_json(j, *hover);
@@ -98,64 +141,38 @@ nlohmann::json Server::onHover(const nlohmann::json& params) {
 }
 
 nlohmann::json Server::onCompletion(const nlohmann::json& params) {
-    std::string uri = getUri(params);
-    const auto* c = m_store.get(uri);
-    if (!c) return nlohmann::json::array();
-    auto list = features::provideCompletion(*c, getPosition(params));
+    auto t = m_ws.lookup(getUri(params));
+    if (!t) return nlohmann::json::array();
+    auto list = features::provideCompletion(*t->unit, *t->file, getPosition(params));
     nlohmann::json j;
     lsp::to_json(j, list);
     return j;
 }
 
 nlohmann::json Server::onDefinition(const nlohmann::json& params) {
-    std::string uri = getUri(params);
-    const auto* c = m_store.get(uri);
-    if (!c) return nullptr;
-    auto locs = features::provideDefinition(*c, getPosition(params), uri);
-    nlohmann::json arr = nlohmann::json::array();
-    for (const auto& l : locs) {
-        nlohmann::json j;
-        lsp::to_json(j, l);
-        arr.push_back(j);
-    }
-    return arr;
+    auto t = m_ws.lookup(getUri(params));
+    if (!t) return nullptr;
+    return toJsonArray(features::provideDefinition(*t->unit, *t->file, getPosition(params)));
 }
 
 nlohmann::json Server::onReferences(const nlohmann::json& params) {
-    std::string uri = getUri(params);
-    const auto* c = m_store.get(uri);
-    if (!c) return nlohmann::json::array();
+    auto t = m_ws.lookup(getUri(params));
+    if (!t) return nlohmann::json::array();
     bool includeDecl = params.value("context", nlohmann::json{})
                              .value("includeDeclaration", false);
-    auto locs = features::provideReferences(*c, getPosition(params), uri, includeDecl);
-    nlohmann::json arr = nlohmann::json::array();
-    for (const auto& l : locs) {
-        nlohmann::json j;
-        lsp::to_json(j, l);
-        arr.push_back(j);
-    }
-    return arr;
+    return toJsonArray(features::provideReferences(*t->unit, *t->file, getPosition(params), includeDecl));
 }
 
 nlohmann::json Server::onDocumentSymbol(const nlohmann::json& params) {
-    std::string uri = getUri(params);
-    const auto* c = m_store.get(uri);
-    if (!c) return nlohmann::json::array();
-    auto syms = features::provideDocumentSymbols(*c);
-    nlohmann::json arr = nlohmann::json::array();
-    for (const auto& s : syms) {
-        nlohmann::json j;
-        lsp::to_json(j, s);
-        arr.push_back(j);
-    }
-    return arr;
+    auto t = m_ws.lookup(getUri(params));
+    if (!t) return nlohmann::json::array();
+    return toJsonArray(features::provideDocumentSymbols(*t->unit, *t->file));
 }
 
 nlohmann::json Server::onSignatureHelp(const nlohmann::json& params) {
-    std::string uri = getUri(params);
-    const auto* c = m_store.get(uri);
-    if (!c) return nullptr;
-    auto help = features::provideSignatureHelp(*c, getPosition(params));
+    auto t = m_ws.lookup(getUri(params));
+    if (!t) return nullptr;
+    auto help = features::provideSignatureHelp(*t->unit, *t->file, getPosition(params));
     if (!help) return nullptr;
     nlohmann::json j;
     lsp::to_json(j, *help);
@@ -163,17 +180,15 @@ nlohmann::json Server::onSignatureHelp(const nlohmann::json& params) {
 }
 
 nlohmann::json Server::onFoldingRange(const nlohmann::json& params) {
-    std::string uri = getUri(params);
-    const auto* c = m_store.get(uri);
-    if (!c) return nlohmann::json::array();
-    auto ranges = features::provideFoldingRanges(*c);
-    nlohmann::json arr = nlohmann::json::array();
-    for (const auto& fr : ranges) {
-        nlohmann::json j;
-        lsp::to_json(j, fr);
-        arr.push_back(j);
-    }
-    return arr;
+    auto t = m_ws.lookup(getUri(params));
+    if (!t) return nlohmann::json::array();
+    return toJsonArray(features::provideFoldingRanges(*t->unit, *t->file));
+}
+
+nlohmann::json Server::onDocumentLink(const nlohmann::json& params) {
+    auto t = m_ws.lookup(getUri(params));
+    if (!t) return nlohmann::json::array();
+    return toJsonArray(features::provideDocumentLinks(*t->unit, *t->file));
 }
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
@@ -189,6 +204,7 @@ void Server::registerHandlers() {
     m_handlers["textDocument/documentSymbol"]=[this](const auto& p){ return onDocumentSymbol(p); };
     m_handlers["textDocument/signatureHelp"]= [this](const auto& p){ return onSignatureHelp(p); };
     m_handlers["textDocument/foldingRange"] = [this](const auto& p){ return onFoldingRange(p); };
+    m_handlers["textDocument/documentLink"] = [this](const auto& p){ return onDocumentLink(p); };
 }
 
 void Server::dispatch(const nlohmann::json& msg) {
@@ -199,11 +215,19 @@ void Server::dispatch(const nlohmann::json& msg) {
 
     // Notifications (no id)
     if (!hasId) {
-        if (method == "initialized")              onInitialized(params);
-        else if (method == "textDocument/didOpen")   onDidOpen(params);
-        else if (method == "textDocument/didChange") onDidChange(params);
-        else if (method == "textDocument/didClose")  onDidClose(params);
-        else if (method == "exit")                   onExit(params);
+        try {
+            if (method == "initialized")              onInitialized(params);
+            else if (method == "textDocument/didOpen")   onDidOpen(params);
+            else if (method == "textDocument/didChange") onDidChange(params);
+            else if (method == "textDocument/didClose")  onDidClose(params);
+            else if (method == "workspace/didChangeConfiguration") onDidChangeConfiguration(params);
+            else if (method == "workspace/didChangeWatchedFiles")  onDidChangeWatchedFiles(params);
+            else if (method == "exit")                   onExit(params);
+        } catch (const std::exception& e) {
+            transport::JsonRpcStream::writeNotification("window/logMessage",
+                {{"type", 1}, {"message", std::string("misa-lsp: ") + method + ": " + e.what()}});
+        }
+        flushDiagnostics();
         return;
     }
 
@@ -231,6 +255,7 @@ void Server::dispatch(const nlohmann::json& msg) {
     }
 
     transport::JsonRpcStream::writeResponse(id, result);
+    flushDiagnostics();
 }
 
 int Server::run() {

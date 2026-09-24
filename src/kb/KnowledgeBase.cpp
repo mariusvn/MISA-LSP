@@ -20,31 +20,6 @@ KnowledgeBase::KnowledgeBase() {
         m_instrIdx[std::string(m_instructions[i].mnemonic)] = i;
 
     // ── Registers ─────────────────────────────────────────────────────────────
-    // Temporary t0-t15
-    for (int i = 0; i <= 15; ++i)
-        m_registers.push_back({"",  "temporary", "caller-saved; short-lived temporaries", false});
-    // Argument a0-a15
-    for (int i = 0; i <= 15; ++i)
-        m_registers.push_back({"", "argument", "caller-saved; function arguments and return values", false});
-    // Saved s0-s31
-    for (int i = 0; i <= 31; ++i)
-        m_registers.push_back({"", "saved", "callee-saved; must be preserved by called functions", false});
-
-    // Fix names for GPRs (we stored them with empty names above; rebuild properly)
-    m_registers.clear();
-    for (int i = 0; i <= 15; ++i) {
-        m_registers.push_back({std::string_view{}, "temporary",
-            "Caller-saved. Free to use as scratch. No guarantee of preservation across calls.", false});
-    }
-    for (int i = 0; i <= 15; ++i) {
-        m_registers.push_back({std::string_view{}, "argument",
-            "Caller-saved. Pass function arguments and receive return values via a0, a1, …", false});
-    }
-    for (int i = 0; i <= 31; ++i) {
-        m_registers.push_back({std::string_view{}, "saved",
-            "Callee-saved. Called function must push/pop these if it uses them.", false});
-    }
-
     // Special-purpose registers
     static const RegisterInfo specials[] = {
         {"zr", "special", "Zero register. Always reads 0; writes are silently discarded.", false},
@@ -56,10 +31,8 @@ KnowledgeBase::KnowledgeBase() {
         {"fp", "special", "Frame Pointer. Managed by `cal`/`ret`. Advanced use only.", false},
         {"pc", "special", "Program Counter. Managed by the VM. Do NOT write manually.", true},
     };
-    for (const auto& r : specials)
-        m_registers.push_back(r);
 
-    // Build index: we need stable string keys, use a static array for GPR names
+    // GPR names need stable storage since RegisterInfo holds string_views.
     static std::vector<std::string> gprNames;
     if (gprNames.empty()) {
         for (int i = 0; i <= 15; ++i) gprNames.push_back("t" + std::to_string(i));
@@ -67,8 +40,6 @@ KnowledgeBase::KnowledgeBase() {
         for (int i = 0; i <= 31; ++i) gprNames.push_back("s" + std::to_string(i));
     }
 
-    // Fix string_views to point at stable storage, rebuild whole list properly
-    m_registers.clear();
     for (int i = 0; i <= 15; ++i)
         m_registers.push_back({gprNames[i], "temporary",
             "Caller-saved. Free to use as scratch.", false});
@@ -116,6 +87,7 @@ KnowledgeBase::KnowledgeBase() {
         {"gte",   "Greater Than or Equal signed (a >= b)",         false},
         {"ltu",   "Less Than unsigned (a < b)",                    false},
         {"lteu",  "Less Than or Equal unsigned (a <= b)",          false},
+        {"gtu",   "Greater Than unsigned (a > b)",                 false},
         {"gteu",  "Greater Than or Equal unsigned (a >= b)",       false},
         {"feqa",  "Float Equal Approx. (|b - a| < ε)",            true},
         {"fneqa", "Float Not Equal Approx. (|b - a| >= ε)",       true},
@@ -148,6 +120,34 @@ KnowledgeBase::KnowledgeBase() {
         {"BTN_B",        false,  4.0,               "Button bitmask: B"},
         {"BTN_X",        false,  2.0,               "Button bitmask: X"},
         {"BTN_Y",        false,  1.0,               "Button bitmask: Y"},
+        {"MAX_TERMINAL_INPUT_SIZE", false, 256.0,   "Maximum terminal input string size in bytes, including the null byte"},
+        {"MOUSE_BTN_LEFT",       false, 1.0,        "Mouse button bitmask: LEFT"},
+        {"MOUSE_BTN_RIGHT",      false, 2.0,        "Mouse button bitmask: RIGHT"},
+        {"MOUSE_BTN_MIDDLE",     false, 4.0,        "Mouse button bitmask: MIDDLE"},
+        {"MOUSE_BTN_WHEEL_UP",   false, 8.0,        "Mouse button bitmask: WHEEL UP"},
+        {"MOUSE_BTN_WHEEL_DOWN", false, 16.0,       "Mouse button bitmask: WHEEL DOWN"},
+        {"KBE_PRESSED",  false,  1.0,               "Keyboard event flag: key pressed (clear = released)"},
+        {"KBE_REPEAT",   false,  2.0,               "Keyboard event flag: repeat event"},
+        {"KBE_CTRL",     false,  4.0,               "Keyboard event flag: Ctrl modifier held"},
+        {"KBE_SHIFT",    false,  8.0,               "Keyboard event flag: Shift modifier held"},
+        {"KBE_ALT",      false,  16.0,              "Keyboard event flag: Alt modifier held"},
+        {"KEY_TAB",      false,  128.0,             "Key code 0x80: Tab"},
+        {"KEY_BACKSPACE",false,  129.0,             "Key code 0x81: Backspace"},
+        {"KEY_ENTER",    false,  130.0,             "Key code 0x82: Enter"},
+        {"KEY_ESC",      false,  131.0,             "Key code 0x83: Escape"},
+        {"KEY_CTRL",     false,  132.0,             "Key code 0x84: Ctrl"},
+        {"KEY_SHIFT",    false,  133.0,             "Key code 0x85: Shift"},
+        {"KEY_ALT",      false,  134.0,             "Key code 0x86: Alt"},
+        {"KEY_LEFT",     false,  135.0,             "Key code 0x87: Left arrow"},
+        {"KEY_RIGHT",    false,  136.0,             "Key code 0x88: Right arrow"},
+        {"KEY_UP",       false,  137.0,             "Key code 0x89: Up arrow"},
+        {"KEY_DOWN",     false,  138.0,             "Key code 0x8a: Down arrow"},
+        {"KEY_INSERT",   false,  139.0,             "Key code 0x8b: Insert"},
+        {"KEY_DELETE",   false,  140.0,             "Key code 0x8c: Delete"},
+        {"KEY_HOME",     false,  141.0,             "Key code 0x8d: Home"},
+        {"KEY_END",      false,  142.0,             "Key code 0x8e: End"},
+        {"KEY_PAGE_UP",  false,  143.0,             "Key code 0x8f: Page Up"},
+        {"KEY_PAGE_DOWN",false,  144.0,             "Key code 0x90: Page Down"},
         {"$",            false,  0.0,               "Current assembler address (pa-relative)"},
     };
     for (size_t i = 0; i < m_builtins.size(); ++i)

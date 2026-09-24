@@ -14,9 +14,9 @@
 ![CMake](https://img.shields.io/badge/CMake-3.20%2B-064F8C?style=flat-square&logo=cmake&logoColor=white)
 ![LSP](https://img.shields.io/badge/LSP-3.17-7c3aed?style=flat-square)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-1f2937?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-82%20passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-133%20passing-22c55e?style=flat-square)
 
-[**Features**](#-features) · [**Quick start**](#-quick-start) · [**Editor setup**](#-editor-integration) · [**Architecture**](#-architecture) · [**Language**](#-language-at-a-glance)
+[**Features**](#-features) · [**Quick start**](#-quick-start) · [**Editor setup**](#-editor-integration) · [**Architecture**](#-architecture) · [**Language**](#-language-at-a-glance) · [**Changelog**](CHANGELOG.md)
 
 </div>
 
@@ -24,15 +24,18 @@
 
 ## ✨ Features
 
-Everything below works **today**, driven by a single static knowledge base of the full MISA instruction set.
+Everything below works **today**, driven by a single static knowledge base of the full MISA instruction set
+(up to date with the **Mnemonimov manual v0.1.6**).
 
 | | Capability | What it does |
 |:--:|:--|:--|
-| 🩺 | **Diagnostics** | Unknown instructions, wrong arity, `int`/`float` literal mismatches, writes to read-only registers, undefined labels, missing `exit` in entry points |
-| 💡 | **Hover** | Rich docs for every instruction, register (with ABI role), syscall (args & returns), type, condition and built-in symbol |
-| ⌨️ | **Completion** | **Context-aware** — proposes types after `lod`/`ste`, conditions after `cmp`, `SYS_*` after `syscall`, registers in operand slots, never a wall of noise |
-| 🧭 | **Go to definition** | Jump to any label or constant, qualified names included (`PRINTER.MAPPING`) |
-| 🔎 | **Find references** | Every use of a label or constant across the file |
+| 📚 | **`include` & multi-file projects** | Follows `include "…"` recursively (include-once, cycles ignored), resolves `@u/` / `@s/` virtual folders, and analyses a library through its project's `main.asm` — exactly what the assembler sees |
+| 🩺 | **Diagnostics** | Syntax errors, unknown instructions, wrong arity, `int`/`float` mismatches, immediates used as destinations, writes to read-only registers, undefined labels and constants (define-before-use, `undef`), unresolved `@name-`/`@name+`, malformed character literals and escapes, missing include/`emb file` files, missing `exit` in entry points |
+| 💡 | **Hover** | Rich docs for every instruction, register (with ABI role), syscall (args & returns), type, condition and built-in symbol — plus constant values, character-literal values, `##` doc comments and the file a symbol comes from |
+| ⌨️ | **Completion** | **Context-aware** — proposes types after `lod`/`ste`, conditions after `cmp`, `SYS_*` after `syscall`, registers in operand slots, symbols from every included file |
+| 🧭 | **Go to definition** | Jump to any label or constant — across files, qualified names included (`PRINTER.MAPPING`), reusable labels resolved to the right `@name` — or open an included file |
+| 🔎 | **Find references** | Every use of a label or constant across all the files of the program |
+| 🔗 | **Document links** | `include` and `emb file` paths are clickable |
 | 🗂️ | **Document symbols** | Outline with entry-points highlighted and locals nested under their scope |
 | ✍️ | **Signature help** | Operand slots per instruction, argument-by-argument syscall hints |
 | 📐 | **Folding** | Label scopes, `bmk`/`sbmk` sections, doc-comment blocks |
@@ -80,12 +83,16 @@ ctest --test-dir build --output-on-failure
 
 <br/>
 
-A standalone linter ships alongside the server — handy for CI or a quick check:
+A standalone linter ships alongside the server — handy for CI or a quick check. It follows
+`include`s and reports diagnostics for every file of the program:
 
 ```bash
-build/misa-lint path/to/game.mnemo
-# game.mnemo:12:5: error: Expected a type (i8t, u8t, …) but got 'u17t'.
-# -- 1 diagnostic(s), 1 error(s)
+build/misa-lint path/to/main.asm
+# main.asm:12:5: error: Expected a type (i8t, u8t, …) but got 'u17t'.
+# -- 3 file(s), 1 diagnostic(s), 1 error(s)
+
+# The @u/ and @s/ virtual folders are auto-detected; override them with:
+build/misa-lint --user-dir ~/Mnemonimov/user_projects --sample-dir /games/Mnemonimov/sample_projects main.asm
 ```
 
 </details>
@@ -113,11 +120,19 @@ const client = new LanguageClient(
   'misa-lsp',
   'MISA Language Server',
   serverOptions,
-  { documentSelector: [{ scheme: 'file', language: 'mnemonimov' }] },
+  {
+    documentSelector: [{ scheme: 'file', language: 'mnemonimov' }],
+    // Optional: folders behind @u/ and @s/ (auto-detected when empty).
+    initializationOptions: { mnemonimov: { userProjectsPath: '', sampleProjectsPath: '' } },
+    // Lets the server notice when a closed, included file changes on disk.
+    synchronize: { fileEvents: workspace.createFileSystemWatcher('**/{*.asm,*.mnemo,project.mnemonimov}') },
+  },
 );
 
 client.start();
 ```
+
+The same settings can be updated later through `workspace/didChangeConfiguration`.
 
 </details>
 
@@ -141,15 +156,20 @@ vim.api.nvim_create_autocmd('FileType', {
 
 ## 🏗️ Architecture
 
-One document becomes one cached **`Compilation`** (AST + symbols + diagnostics), rebuilt on every change.
-Every feature provider reads from that plus the static knowledge base.
+Each file is lexed and parsed once (and cached); a **`Compilation`** is a whole *unit* — a root file plus
+everything it includes, expanded in textual order — analysed as one program. The **`Workspace`** picks the
+root of each open document (its project's `main.asm` when that includes it), overlays unsaved editor buffers
+on the disk, and rebuilds the units a change affects. Every feature provider reads from the unit plus the
+static knowledge base.
 
 ```
                  ┌─────────── transport ───────────┐
    editor  ⇄     │  JSON-RPC 2.0 over stdio          │
                  └──────────────┬──────────────────┘
                                 │
-   text ──► Lexer ──► ExprParser (Pratt) ──► Parser ──► AST
+   Workspace (open buffers ⊕ disk, project roots, invalidation)
+                                │
+   files ─► Lexer ─► ExprParser (Pratt) ─► Parser ─► AST ─► include expansion
                                                          │
                           SemanticAnalyzer (2 passes) ◄──┘     ┌──────────────┐
                                    │                            │ Knowledge    │
@@ -159,20 +179,21 @@ Every feature provider reads from that plus the static knowledge base.
                                    │                            └──────────────┘
        ┌───────────────────────────┴───────────────────────────────┐
    Diagnostics · Hover · Completion · Definition · References ·
-   DocumentSymbols · SignatureHelp · Folding
+   DocumentSymbols · SignatureHelp · Folding · DocumentLinks
 ```
 
 ```text
 src/
   transport/   JSON-RPC stdio framing
   protocol/    LSP types + serialization
-  server/      lifecycle, dispatch, document store
+  server/      lifecycle, dispatch, workspace (units, project roots)
+  fs/          paths, file URIs, virtual folders, source providers (disk / memory / overlay)
   text/        TextDocument (UTF-16 position handling)
   kb/          Knowledge Base (instructions, registers, syscalls…)
-  lang/        Lexer → ExprParser → Parser → AST → SemanticAnalyzer → Compilation
+  lang/        Lexer → ExprParser → Parser → AST → include expansion → SemanticAnalyzer → Compilation
   features/    one file per LSP feature provider
 test/          Catch2 unit tests   ·   tools/  standalone linter
-examples/      hello.mnemo · game_skeleton.mnemo
+examples/      hello.mnemo · game_skeleton.mnemo · include/ (multi-file project)
 ```
 
 ---
@@ -180,6 +201,8 @@ examples/      hello.mnemo · game_skeleton.mnemo
 ## 📝 Language at a glance
 
 ```misa
+include "lib/math.asm"        # relative to this file · "@u/lib/main.asm" · "@s/lander/main.asm"
+
 ## Move the player and bounce it off the screen edge.
 def SPEED 2
 
@@ -199,9 +222,10 @@ _update:
 
 | | |
 |:--|:--|
-| **Files** | `.mnemo`, `.asm` |
+| **Files** | `.asm`, `.mnemo` · `include "path"` (recursive, each file once) |
 | **Comments** | `#` line · `##` doc-comment |
 | **Integers** | `42` · `0x2a` · `0b101010` · `0o52` · `10_000` |
+| **Characters** | `'a'` · `'misa'` (up to 4, packed big-endian) · escapes `\0 \t \n \' \" \\` |
 | **Floats** | `3.14` (no scientific notation) |
 | **Strict typing** | `add 1.0` ❌ (wants int) · `fadd 1` ❌ (wants float) |
 | **Labels** | global `foo:` · local `.bar:` · reusable `@loop:` + `@loop-` / `@end+` |

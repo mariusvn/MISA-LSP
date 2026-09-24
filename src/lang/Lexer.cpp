@@ -131,29 +131,78 @@ Token Lexer::readNumber() {
     return Token{t, norm, Span{start, m_pos}};
 }
 
-// ── String ────────────────────────────────────────────────────────────────────
+// ── Escapes, strings and characters ──────────────────────────────────────────
 
-Token Lexer::readString() {
+void Lexer::error(Span sp, std::string msg) {
+    m_diags.push_back({sp, lsp::DiagnosticSeverity::Error, std::move(msg)});
+}
+
+void Lexer::readEscape(uint32_t backslashPos, std::string& out) {
+    if (atEnd() || peek() == '\n') {
+        error(Span{backslashPos, m_pos}, "Incomplete escape sequence.");
+        return;
+    }
+    char esc = advance();
+    switch (esc) {
+        case '0':  out += '\0'; break;
+        case 't':  out += '\t'; break;
+        case 'n':  out += '\n'; break;
+        case '\'': out += '\''; break;
+        case '"':  out += '"';  break;
+        case '\\': out += '\\'; break;
+        default:
+            error(Span{backslashPos, m_pos},
+                  std::string("Unknown escape sequence '\\") + esc +
+                  "'. Supported: \\0 \\t \\n \\' \\\" \\\\.");
+            out += '\\';
+            out += esc;
+            break;
+    }
+}
+
+Token Lexer::readString(bool rawPath) {
     uint32_t start = m_pos;
     advance(); // consume opening '"'
     std::string value;
     while (!atEnd() && peek() != '"' && peek() != '\n') {
+        uint32_t at = m_pos;
         char c = advance();
-        if (c == '\\' && !atEnd()) {
-            char esc = advance();
-            switch (esc) {
-                case 'n':  value += '\n'; break;
-                case 't':  value += '\t'; break;
-                case '\\': value += '\\'; break;
-                case '"':  value += '"';  break;
-                default:   value += '\\'; value += esc; break;
-            }
-        } else {
-            value += c;
-        }
+        if (c == '\\' && !rawPath) readEscape(at, value);
+        else                       value += c;
     }
     if (!atEnd() && peek() == '"') advance(); // consume closing '"'
+    else error(Span{start, m_pos}, "Unterminated string literal.");
     return Token{TokenType::StringLit, std::move(value), Span{start, m_pos}};
+}
+
+Token Lexer::readChar() {
+    uint32_t start = m_pos;
+    advance(); // consume opening '\''
+    std::string value;
+    while (!atEnd() && peek() != '\'' && peek() != '\n') {
+        uint32_t at = m_pos;
+        char c = advance();
+        if (c == '\\') readEscape(at, value);
+        else           value += c;
+    }
+    bool closed = !atEnd() && peek() == '\'';
+    if (closed) advance();
+
+    Span sp{start, m_pos};
+    if (!closed)
+        error(sp, "Unterminated character literal.");
+    else if (value.empty())
+        error(sp, "Empty character literal.");
+    else if (value.size() > MAX_CHAR_LITERAL)
+        error(sp, "Character literal has " + std::to_string(value.size()) +
+                  " characters; at most " + std::to_string(MAX_CHAR_LITERAL) + " are allowed.");
+    for (char c : value) {
+        if (static_cast<unsigned char>(c) >= 0x80) {
+            error(sp, "Character literals only support ASCII characters.");
+            break;
+        }
+    }
+    return Token{TokenType::CharLit, std::move(value), sp};
 }
 
 // ── Main tokenise loop ────────────────────────────────────────────────────────
@@ -196,8 +245,17 @@ std::vector<Token> Lexer::tokenize() {
         // Numbers
         if (std::isdigit((unsigned char)c)) { tokens.push_back(readNumber()); continue; }
 
-        // String literal
-        if (c == '"') { tokens.push_back(readString()); continue; }
+        // String literal. Paths after `include` / `emb file` are taken verbatim so
+        // Windows separators (C:\Users\...) are not read as escape sequences.
+        if (c == '"') {
+            bool rawPath = !tokens.empty() && tokens.back().is(TokenType::Ident) &&
+                           (tokens.back().text == "include" || tokens.back().text == "file");
+            tokens.push_back(readString(rawPath));
+            continue;
+        }
+
+        // Character literal
+        if (c == '\'') { tokens.push_back(readChar()); continue; }
 
         // $ (current address)
         if (c == '$') { advance(); tokens.push_back(makeToken(TokenType::Dollar, start)); continue; }
@@ -255,6 +313,11 @@ std::vector<Token> Lexer::tokenize() {
             default:
                 tokens.push_back(makeToken(TokenType::Error, start, std::string(1, c)));
                 break;
+        }
+        if (tokens.back().is(TokenType::Error)) {
+            std::string msg = "Unexpected character '" + tokens.back().text + "'.";
+            if (c == '=') msg += " Did you mean '=='?";
+            error(tokens.back().span, std::move(msg));
         }
     }
 

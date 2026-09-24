@@ -3,8 +3,9 @@
 
 namespace misa::lang {
 
-ExprParser::ExprParser(std::span<const Token> tokens, size_t startPos)
-    : m_tokens(tokens), m_pos(startPos) {}
+ExprParser::ExprParser(std::span<const Token> tokens, size_t startPos,
+                       std::vector<SyntaxDiagnostic>* diags)
+    : m_tokens(tokens), m_pos(startPos), m_diags(diags) {}
 
 bool ExprParser::atEnd() const {
     return m_pos >= m_tokens.size() || m_tokens[m_pos].is(TokenType::Eof)
@@ -79,9 +80,12 @@ ExprNode ExprParser::parsePrefix() {
 
     // Grouping
     if (tok.is(TokenType::LParen)) {
+        Span open = tok.span;
         consume();
         ExprNode inner = parseExpr(0);
         if (!atEnd() && current().is(TokenType::RParen)) consume();
+        else if (m_diags) m_diags->push_back({open, lsp::DiagnosticSeverity::Error,
+                                              "Missing closing ')'."});
         return inner;
     }
 
@@ -128,6 +132,14 @@ ExprNode ExprParser::parsePrefix() {
         double val = 0.0;
         try { val = std::stod(tok.text); } catch (...) {}
         return FloatLitExpr{val, tok.span};
+    }
+
+    // Character literal: up to 4 ASCII codes packed big-endian ('ab' == 0x6162).
+    if (tok.is(TokenType::CharLit)) {
+        consume();
+        int64_t val = 0;
+        for (char ch : tok.text) val = (val << 8) | static_cast<unsigned char>(ch);
+        return IntLitExpr{val & 0xFFFFFFFF, tok.span};
     }
 
     if (tok.is(TokenType::StringLit)) {

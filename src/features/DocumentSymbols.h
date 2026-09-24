@@ -5,6 +5,12 @@
 
 namespace misa::features {
 
-std::vector<lsp::DocumentSymbol> provideDocumentSymbols(const lang::Compilation& c);
+// Outline of file `f` (symbols defined in other files of the unit are skipped).
+std::vector<lsp::DocumentSymbol> provideDocumentSymbols(const lang::Compilation& c,
+                                                        const lang::SourceFile& f);
+
+inline std::vector<lsp::DocumentSymbol> provideDocumentSymbols(const lang::Compilation& c) {
+    return provideDocumentSymbols(c, c.root());
+}
 
 } // namespace misa::features

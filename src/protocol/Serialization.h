@@ -38,6 +38,18 @@ inline void to_json(nlohmann::json& j, const Diagnostic& d) {
         {"source",   d.source.value_or("misa-lsp")}
     };
     if (d.code) j["code"] = *d.code;
+    if (!d.tags.empty()) {
+        auto& tags = j["tags"] = nlohmann::json::array();
+        for (auto t : d.tags) tags.push_back(static_cast<int>(t));
+    }
+}
+
+// ── DocumentLink ──────────────────────────────────────────────────────────────
+
+inline void to_json(nlohmann::json& j, const DocumentLink& l) {
+    j = {{"range", l.range}};
+    if (l.target)  j["target"]  = *l.target;
+    if (l.tooltip) j["tooltip"] = *l.tooltip;
 }
 
 // ── MarkupContent ─────────────────────────────────────────────────────────────
@@ -131,7 +143,8 @@ inline nlohmann::json makeServerCapabilities() {
         {"signatureHelpProvider", {
             {"triggerCharacters", {" ", ","}}
         }},
-        {"foldingRangeProvider", true}
+        {"foldingRangeProvider", true},
+        {"documentLinkProvider", {{"resolveProvider", false}}}
     };
 }
 

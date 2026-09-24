@@ -13,9 +13,16 @@ public:
 
     std::vector<Statement> parse();
 
+    // Structural errors (stray tokens, missing include path, …) found by parse().
+    const std::vector<SyntaxDiagnostic>& diagnostics() const { return m_diags; }
+
 private:
-    std::vector<Token> m_tokens;
-    size_t             m_pos = 0;
+    std::vector<Token>            m_tokens;
+    size_t                        m_pos = 0;
+    std::vector<SyntaxDiagnostic> m_diags;
+
+    void error(Span sp, std::string msg);
+    bool atLineEnd() const; // Newline, comment or end of input
 
     const Token& current() const;
     const Token& peek(int offset = 0) const;
@@ -36,6 +43,7 @@ private:
     Statement parseEmb();
     Statement parseRes();
     Statement parseBmk(bool isSub);
+    Statement parseInclude();
 
     OperandNode parseOperand();
     std::vector<OperandNode> parseOperandList();

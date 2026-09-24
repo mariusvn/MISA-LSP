@@ -4,6 +4,8 @@ build-*/
 out/
 bin/
 lib/
+# example projects keep their MISA libraries
+!examples/**/lib/
 install/
 
 # CMake / IDE-generated build trees

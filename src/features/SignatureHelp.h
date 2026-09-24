@@ -6,6 +6,12 @@
 namespace misa::features {
 
 std::optional<lsp::SignatureHelp> provideSignatureHelp(const lang::Compilation& c,
-                                                        lsp::Position pos);
+                                                       const lang::SourceFile& f,
+                                                       lsp::Position pos);
+
+inline std::optional<lsp::SignatureHelp> provideSignatureHelp(const lang::Compilation& c,
+                                                              lsp::Position pos) {
+    return provideSignatureHelp(c, c.root(), pos);
+}
 
 } // namespace misa::features

@@ -1,4 +1,5 @@
 #pragma once
+#include "protocol/LspTypes.h"
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -27,6 +28,7 @@ enum class TokenType : uint8_t {
     IntLit,    // decimal / hex / bin / oct
     FloatLit,  // 1.0, 3.14
     StringLit, // "..."
+    CharLit,   // 'a' … 'abcd' (text holds the decoded characters)
 
     // Register range syntax
     DotDot,    // ..
@@ -77,6 +79,13 @@ struct Token {
     Span        span;
 
     bool is(TokenType t) const { return type == t; }
+};
+
+// A problem found while lexing or parsing, before any source position mapping.
+struct SyntaxDiagnostic {
+    Span                    span;
+    lsp::DiagnosticSeverity severity = lsp::DiagnosticSeverity::Error;
+    std::string             message;
 };
 
 } // namespace misa::lang
