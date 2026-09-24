@@ -157,9 +157,9 @@ private:
             return;
         }
         std::string ext = fs::extensionLower(resolved.path);
-        if (ext != ".asm" && ext != ".mnemo")
+        if (ext != ".asm" && ext != ".misa" && ext != ".mnemo")
             diag(fid, inc.pathSpan, DiagnosticSeverity::Warning,
-                 "Included files are expected to be .asm source files.");
+                 "Included files are expected to be source files (.asm, .misa or .mnemo).");
 
         FileId target = addFile(uriFor(key, resolved.path), resolved.path, key,
                                 parseCached(m_o.cache, key, std::move(*text)));

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.1] — 2026-09-25
+
+### Changed
+
+- `.misa` files are accepted as MISA sources: including one no longer warns that included
+  files should be `.asm` ([vscode-menmonimov-asm#1](https://github.com/mariusvn/vscode-menmonimov-asm/issues/1)).
+- `serverInfo.version` is now `1.1.1`.
+
 ## [1.1.0] — 2026-09-25
 
 Brings the server up to date with **Mnemonimov manual v0.1.6** and makes it understand

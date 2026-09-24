@@ -1,4 +1,4 @@
-// misa-lint — standalone CLI that prints diagnostics for a .asm/.mnemo file and
+// misa-lint — standalone CLI that prints diagnostics for a .asm/.misa/.mnemo file and
 // every file it includes. Useful for CI and for testing the analyzer without an
 // LSP client.
 //
