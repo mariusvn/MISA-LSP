@@ -129,3 +129,52 @@ TEST_CASE("Lexer: dollar sign", "[lexer]") {
     auto t = lex("$");
     REQUIRE(t[0].type == TokenType::Dollar);
 }
+
+// ── Character literals and escapes (manual v0.1.6) ───────────────────────────
+
+static std::vector<SyntaxDiagnostic> lexDiags(const std::string& src) {
+    Lexer l(src);
+    l.tokenize();
+    return l.diagnostics();
+}
+
+TEST_CASE("Lexer: character literals decode escapes", "[lexer][char]") {
+    auto t = lex(R"('a' 'abcd' '\n' '\'' '\0\t\n\\')");
+    REQUIRE(t.size() == 5);
+    for (const auto& tok : t) REQUIRE(tok.type == TokenType::CharLit);
+    REQUIRE(t[0].text == "a");
+    REQUIRE(t[1].text == "abcd");
+    REQUIRE(t[2].text == "\n");
+    REQUIRE(t[3].text == "'");
+    REQUIRE(t[4].text == std::string("\0\t\n\\", 4));
+}
+
+TEST_CASE("Lexer: malformed character literals are reported", "[lexer][char]") {
+    REQUIRE(lexDiags("''").size() == 1);           // empty
+    REQUIRE(lexDiags("'abcde'").size() == 1);      // more than 4 characters
+    REQUIRE(lexDiags("'a").size() == 1);           // unterminated
+    REQUIRE(lexDiags(R"('\q')").size() == 1);      // unknown escape
+    REQUIRE(lexDiags("'ab' 'c'").empty());
+}
+
+TEST_CASE("Lexer: string escapes follow the manual", "[lexer]") {
+    auto t = lex(R"("She said \"Hi\" \0\'")");
+    REQUIRE(t.size() == 1);
+    REQUIRE(t[0].text == std::string("She said \"Hi\" \0'", 16));
+    const std::string badEscape = R"("bad \x")"; // MSVC mis-stringizes raw strings in macros
+    REQUIRE(lexDiags(badEscape).size() == 1);
+    REQUIRE(lexDiags("\"unterminated").size() == 1);
+}
+
+TEST_CASE("Lexer: include and emb file paths are verbatim", "[lexer]") {
+    auto t = lex(R"(include "C:\Users\new\x.asm")");
+    REQUIRE(t.size() == 2);
+    REQUIRE(t[1].text == R"(C:\Users\new\x.asm)");
+    REQUIRE(lexDiags(R"(emb file "a\b.png")").empty());
+}
+
+TEST_CASE("Lexer: unexpected characters are reported", "[lexer]") {
+    auto d = lexDiags("mov t0, `");
+    REQUIRE(d.size() == 1);
+    REQUIRE(d[0].message.find("Unexpected character") != std::string::npos);
+}

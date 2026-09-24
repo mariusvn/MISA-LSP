@@ -25,7 +25,9 @@ set(CORE_SOURCES
     src/transport/JsonRpcStream.cpp
     src/protocol/Serialization.cpp
     src/server/Server.cpp
-    src/server/DocumentStore.cpp
+    src/server/Workspace.cpp
+    src/fs/Path.cpp
+    src/fs/SourceProvider.cpp
     src/text/TextDocument.cpp
     src/kb/KnowledgeBase.cpp
     src/lang/Ast.cpp
@@ -43,6 +45,7 @@ set(CORE_SOURCES
     src/features/References.cpp
     src/features/SignatureHelp.cpp
     src/features/Folding.cpp
+    src/features/DocumentLinks.cpp
 )
 
 add_library(misa-core STATIC ${CORE_SOURCES})
@@ -63,6 +66,9 @@ if(BUILD_TESTING)
         test/test_expr.cpp
         test/test_semantic.cpp
         test/test_features.cpp
+        test/test_paths.cpp
+        test/test_include.cpp
+        test/test_workspace.cpp
     )
     target_link_libraries(misa-tests PRIVATE misa-core Catch2::Catch2WithMain)
     include(CTest)

@@ -1,5 +1,5 @@
 #pragma once
-#include "server/DocumentStore.h"
+#include "server/Workspace.h"
 #include "transport/JsonRpcStream.h"
 #include <nlohmann/json.hpp>
 #include <string>
@@ -10,11 +10,13 @@ namespace misa::server {
 
 class Server {
 public:
+    Server();
+
     // Run the main request loop until shutdown+exit or EOF. Returns exit code.
     int run();
 
 private:
-    DocumentStore m_store;
+    Workspace     m_ws;
     bool          m_initialized = false;
     bool          m_shutdown    = false;
 
@@ -36,6 +38,12 @@ private:
     void onDidChange(const nlohmann::json& params);
     void onDidClose (const nlohmann::json& params);
 
+    // Workspace
+    void onDidChangeConfiguration(const nlohmann::json& params);
+    void onDidChangeWatchedFiles (const nlohmann::json& params);
+    // Applies mnemonimov.* settings (userProjectsPath, sampleProjectsPath).
+    void applySettings(const nlohmann::json& settings);
+
     // Feature providers
     nlohmann::json onHover         (const nlohmann::json& params);
     nlohmann::json onCompletion    (const nlohmann::json& params);
@@ -44,10 +52,13 @@ private:
     nlohmann::json onDocumentSymbol(const nlohmann::json& params);
     nlohmann::json onSignatureHelp (const nlohmann::json& params);
     nlohmann::json onFoldingRange  (const nlohmann::json& params);
+    nlohmann::json onDocumentLink  (const nlohmann::json& params);
 
     // Push diagnostics after every document change
     void publishDiagnostics(const std::string& uri,
                             const std::vector<lsp::Diagnostic>& diags);
+    // Publish everything the workspace queued.
+    void flushDiagnostics();
 
     // Helper: extract position from a request
     static lsp::Position getPosition(const nlohmann::json& params);

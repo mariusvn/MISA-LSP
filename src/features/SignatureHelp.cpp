@@ -26,18 +26,28 @@ static std::string operandKindLabel(kb::OperandKind k) {
     }
 }
 
-std::optional<SignatureHelp> provideSignatureHelp(const Compilation& c, Position pos) {
+std::optional<SignatureHelp> provideSignatureHelp(const Compilation& /*c*/, const SourceFile& f,
+                                                  Position pos) {
     const auto& kb = kb::KnowledgeBase::get();
 
-    auto lineText = c.doc.lineText(pos.line);
-    uint32_t offset = c.doc.positionToOffset(pos);
-    uint32_t lstart = c.doc.positionToOffset({pos.line, 0});
+    auto lineText = f.doc().lineText(pos.line);
+    uint32_t offset = f.doc().positionToOffset(pos);
+    uint32_t lstart = f.doc().positionToOffset({pos.line, 0});
     uint32_t col    = offset - lstart;
     if (col > lineText.size()) col = (uint32_t)lineText.size();
 
-    // Extract the mnemonic (first word on line)
-    size_t i = 0;
-    while (i < lineText.size() && lineText[i] == ' ') ++i;
+    // Extract the mnemonic (first word on line, after an optional "label:")
+    auto skipBlanks = [&](size_t k) {
+        while (k < lineText.size() && (lineText[k] == ' ' || lineText[k] == '\t')) ++k;
+        return k;
+    };
+    size_t i = skipBlanks(0);
+    {
+        size_t j = i;
+        while (j < lineText.size() && (std::isalnum((unsigned char)lineText[j]) ||
+               lineText[j] == '_' || lineText[j] == '.' || lineText[j] == '@')) ++j;
+        if (j < lineText.size() && lineText[j] == ':') i = skipBlanks(j + 1);
+    }
     size_t mnStart = i;
     while (i < lineText.size() && (std::isalnum((unsigned char)lineText[i]) || lineText[i] == '_'))
         ++i;
@@ -53,7 +63,7 @@ std::optional<SignatureHelp> provideSignatureHelp(const Compilation& c, Position
     // ── Syscall signature ─────────────────────────────────────────────────────
     if (mnemonic == "syscall") {
         // Try to find the syscall name already typed
-        while (i < lineText.size() && lineText[i] == ' ') ++i;
+        while (i < lineText.size() && (lineText[i] == ' ' || lineText[i] == '\t')) ++i;
         size_t snStart = i;
         while (i < lineText.size() && (std::isalnum((unsigned char)lineText[i]) || lineText[i] == '_'))
             ++i;

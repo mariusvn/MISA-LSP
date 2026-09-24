@@ -12,14 +12,14 @@ using lk::DocCommentStmt;
 using lsk::FoldingRange;
 using lsk::FoldingRangeKind;
 
-std::vector<FoldingRange> provideFoldingRanges(const Compilation& c) {
+std::vector<FoldingRange> provideFoldingRanges(const Compilation& c, const lk::SourceFile& f) {
     std::vector<FoldingRange> ranges;
 
     // Fold 1: each global label scope (from its line to the line before the next global label)
     const auto& defs = c.symbols.definitions();
     std::vector<const SymbolDef*> globals;
     for (const auto& d : defs)
-        if (d.kind == lk::SymbolKind::GlobalLabel)
+        if (d.kind == lk::SymbolKind::GlobalLabel && d.file == f.id)
             globals.push_back(&d);
 
     std::sort(globals.begin(), globals.end(),
@@ -27,7 +27,7 @@ std::vector<FoldingRange> provideFoldingRanges(const Compilation& c) {
             return a->range.start.line < b->range.start.line;
         });
 
-    uint32_t totalLines = c.doc.lineCount();
+    uint32_t totalLines = f.doc().lineCount();
     for (size_t i = 0; i < globals.size(); ++i) {
         uint32_t start = globals[i]->range.start.line;
         uint32_t end   = (i + 1 < globals.size())
@@ -47,9 +47,9 @@ std::vector<FoldingRange> provideFoldingRanges(const Compilation& c) {
     struct BmkEntry { uint32_t line; bool isSub; };
     std::vector<BmkEntry> bookmarks;
 
-    for (const auto& stmt : c.statements) {
+    for (const auto& stmt : f.statements()) {
         if (const auto* bmk = std::get_if<BmkDirective>(&stmt)) {
-            uint32_t line = c.doc.offsetToPosition(bmk->span.start).line;
+            uint32_t line = f.doc().offsetToPosition(bmk->span.start).line;
             bookmarks.push_back({line, bmk->isSub});
         }
     }
@@ -87,9 +87,9 @@ std::vector<FoldingRange> provideFoldingRanges(const Compilation& c) {
             blockStart = UINT32_MAX;
         };
 
-        for (const auto& stmt : c.statements) {
+        for (const auto& stmt : f.statements()) {
             if (const auto* dc = std::get_if<DocCommentStmt>(&stmt)) {
-                uint32_t line = c.doc.offsetToPosition(dc->span.start).line;
+                uint32_t line = f.doc().offsetToPosition(dc->span.start).line;
                 if (blockStart == UINT32_MAX) blockStart = line;
                 blockEnd = line;
             } else {

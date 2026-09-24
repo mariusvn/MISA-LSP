@@ -5,10 +5,10 @@
 
 namespace misa::features {
 
-// Diagnostics are generated during compilation (SemanticAnalyzer).
-// This thin wrapper just exposes them.
-inline const std::vector<lsp::Diagnostic>& getDiagnostics(const lang::Compilation& c) {
-    return c.diagnostics;
+// Diagnostics are generated during compilation (parser, unit builder and
+// SemanticAnalyzer). This thin wrapper exposes those of one file.
+inline const std::vector<lsp::Diagnostic>& getDiagnostics(const lang::SourceFile& f) {
+    return f.diagnostics;
 }
 
 } // namespace misa::features

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace misa::lsp {
@@ -39,6 +40,7 @@ struct TextDocumentContentChangeEvent { std::string text; }; // Full sync only
 // ── Diagnostics ───────────────────────────────────────────────────────────────
 
 enum class DiagnosticSeverity : int { Error = 1, Warning = 2, Information = 3, Hint = 4 };
+enum class DiagnosticTag : int { Unnecessary = 1, Deprecated = 2 };
 
 struct Diagnostic {
     Range             range;
@@ -46,6 +48,21 @@ struct Diagnostic {
     std::string       message;
     std::optional<std::string> source;
     std::optional<std::string> code;
+    std::vector<DiagnosticTag> tags;
+
+    static Diagnostic make(Range range, DiagnosticSeverity severity, std::string message) {
+        Diagnostic d;
+        d.range    = range;
+        d.severity = severity;
+        d.message  = std::move(message);
+        d.source   = "misa-lsp";
+        return d;
+    }
+
+    bool operator==(const Diagnostic& o) const {
+        return range.start == o.range.start && range.end == o.range.end &&
+               severity == o.severity && message == o.message && tags == o.tags;
+    }
 };
 
 // ── Markup ───────────────────────────────────────────────────────────────────
@@ -124,6 +141,14 @@ struct SignatureHelp {
     std::vector<SignatureInformation>  signatures;
     std::optional<uint32_t>            activeSignature;
     std::optional<uint32_t>            activeParameter;
+};
+
+// ── Document links ────────────────────────────────────────────────────────────
+
+struct DocumentLink {
+    Range                      range;
+    std::optional<std::string> target;  // URI
+    std::optional<std::string> tooltip;
 };
 
 // ── Folding ranges ────────────────────────────────────────────────────────────

@@ -9,10 +9,10 @@ using namespace misa::lang;
 using namespace misa::lsp;
 
 // Determine the word the user is currently typing (to filter completions).
-static std::string prefixAt(const Compilation& c, Position pos) {
-    auto line = c.doc.lineText(pos.line);
-    uint32_t offset = c.doc.positionToOffset(pos);
-    uint32_t lineStart = c.doc.positionToOffset({pos.line, 0});
+static std::string prefixAt(const SourceFile& f, Position pos) {
+    auto line = f.doc().lineText(pos.line);
+    uint32_t offset = f.doc().positionToOffset(pos);
+    uint32_t lineStart = f.doc().positionToOffset({pos.line, 0});
     uint32_t col = offset - lineStart;
     if (col > line.size()) col = (uint32_t)line.size();
 
@@ -29,9 +29,9 @@ struct CompletionContext {
     int         slot = 0;          // operand index 0-based (valid when !inMnemonic)
 };
 
-static CompletionContext analyzeContext(const Compilation& c, Position pos) {
-    auto line = c.doc.lineText(pos.line);
-    uint32_t col = c.doc.positionToOffset(pos) - c.doc.positionToOffset({pos.line, 0});
+static CompletionContext analyzeContext(const SourceFile& f, Position pos) {
+    auto line = f.doc().lineText(pos.line);
+    uint32_t col = f.doc().positionToOffset(pos) - f.doc().positionToOffset({pos.line, 0});
     if (col > line.size()) col = (uint32_t)line.size();
     std::string before(line.substr(0, col));
 
@@ -134,22 +134,29 @@ static CompletionItem builtinItem(const kb::BuiltinSymbol& info) {
     return item;
 }
 
-static CompletionItem labelItem(const lang::SymbolDef& def) {
+static CompletionItem labelItem(const Compilation& c, const SourceFile& f, const lang::SymbolDef& def) {
     CompletionItem item;
+    bool isConst = def.kind == lang::SymbolKind::Constant || def.kind == lang::SymbolKind::LocalConstant;
     item.label  = def.name;
-    item.kind   = CompletionItemKind::Reference;
-    item.detail = def.parent.empty() ? "label" : "label in " + def.parent;
+    item.kind   = isConst ? CompletionItemKind::Constant : CompletionItemKind::Reference;
+    std::string what = isConst ? "constant" : "label";
+    item.detail = (def.parent.empty() || def.kind == lang::SymbolKind::GlobalLabel)
+                ? what : what + " in " + def.parent;
+    if (def.file != f.id) {
+        const auto& other = c.files[def.file];
+        item.detail = *item.detail + " — " + fs::filename(other.path.empty() ? other.uri : other.path);
+    }
     item.sortText = "3_" + item.label;
     return item;
 }
 
-CompletionList provideCompletion(const Compilation& c, Position pos) {
+CompletionList provideCompletion(const Compilation& c, const SourceFile& f, Position pos) {
     const auto& kb = kb::KnowledgeBase::get();
     CompletionList list;
     list.isIncomplete = false;
 
-    std::string prefix = prefixAt(c, pos);
-    CompletionContext ctx = analyzeContext(c, pos);
+    std::string prefix = prefixAt(f, pos);
+    CompletionContext ctx = analyzeContext(f, pos);
 
     auto matches = [&](std::string_view name) -> bool {
         if (prefix.empty()) return true;
@@ -167,7 +174,7 @@ CompletionList provideCompletion(const Compilation& c, Position pos) {
                 list.items.push_back(instrItem(info));
 
         // Built-in directives
-        for (const auto& kw : {"def", "undef", "emb", "res", "bmk", "sbmk"}) {
+        for (const auto& kw : {"def", "undef", "emb", "res", "bmk", "sbmk", "include"}) {
             if (matches(kw)) {
                 CompletionItem item;
                 item.label = kw;
@@ -210,10 +217,14 @@ CompletionList provideCompletion(const Compilation& c, Position pos) {
         return list;
     }
 
-    // ── emb/res first arg → types ─────────────────────────────────────────────
+    // ── include path / bookmark title: nothing sensible to suggest ───────────
+    if (mnemonic == "include" || mnemonic == "bmk" || mnemonic == "sbmk")
+        return list;
+
+    // ── emb/res first arg → types (res only takes scalar types) ──────────────
     if ((mnemonic == "emb" || mnemonic == "res") && commaCount == 0) {
         for (const auto& t : kb.types())
-            if (matches(t.name))
+            if (matches(t.name) && !(mnemonic == "res" && t.embedOnly))
                 list.items.push_back(typeItem(t));
         return list;
     }
@@ -237,9 +248,10 @@ CompletionList provideCompletion(const Compilation& c, Position pos) {
             list.items.push_back(builtinItem(b));
 
     // User-defined labels and constants
+    // Reusable labels are referenced as @name- / @name+, not by their plain name.
     for (const auto& def : c.symbols.definitions())
-        if (matches(def.name))
-            list.items.push_back(labelItem(def));
+        if (def.kind != lang::SymbolKind::ReusableLabel && matches(def.name))
+            list.items.push_back(labelItem(c, f, def));
 
     return list;
 }

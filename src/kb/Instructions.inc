@@ -100,6 +100,11 @@
  "dest = (a * b)[63:32]",
  {OK::RegW, OK::RegRInt, OK::RegRInt}},
 
+{"fma", "Fused Multiply-Add", "Integer Arithmetic", true,
+ "Computes a * b + c in a single operation.",
+ "dest = (a * b) + c",
+ {OK::RegW, OK::RegRInt, OK::RegRInt, OK::RegRInt}},
+
 {"pow", "Power", "Integer Arithmetic", true,
  "Raises base to an integer exponent.",
  "dest = base ** exponent",
@@ -154,6 +159,36 @@
  "Returns a random integer in [min, max). max is exclusive.",
  "dest = rand_range(min, max)",
  {OK::RegW, OK::RegRInt, OK::RegRInt}},
+
+{"mlhu", "Multiply High Unsigned", "Integer Arithmetic", true,
+ "Multiplies two unsigned integers; result is the upper 32 bits.",
+ "dest = (a * b)[63:32]",
+ {OK::RegW, OK::RegRInt, OK::RegRInt}},
+
+{"divu", "Divide Unsigned", "Integer Arithmetic", true,
+ "Unsigned integer division.",
+ "dest = dividend / divisor",
+ {OK::RegW, OK::RegRInt, OK::RegRInt}},
+
+{"remu", "Remainder Unsigned", "Integer Arithmetic", true,
+ "Remainder of an unsigned division.",
+ "dest = dividend % divisor",
+ {OK::RegW, OK::RegRInt, OK::RegRInt}},
+
+{"minu", "Minimum Unsigned", "Integer Arithmetic", true,
+ "Returns the smaller of two unsigned integers.",
+ "dest = min(a, b)",
+ {OK::RegW, OK::RegRInt, OK::RegRInt}},
+
+{"maxu", "Maximum Unsigned", "Integer Arithmetic", true,
+ "Returns the larger of two unsigned integers.",
+ "dest = max(a, b)",
+ {OK::RegW, OK::RegRInt, OK::RegRInt}},
+
+{"clpu", "Clamp Unsigned", "Integer Arithmetic", true,
+ "Clamps an unsigned value between min and max (swaps if min > max).",
+ "dest = clamp(value, min, max)",
+ {OK::RegW, OK::RegRInt, OK::RegRInt, OK::RegRInt}},
 
 // ── Floating-Point ────────────────────────────────────────────────────────────
 {"fcti", "Float to Int", "Floating-Point", true,
@@ -467,6 +502,26 @@
 {"jfs", "Jump If False", "Control Flow", false,
  "Jumps if the cr register is clear (zero).",
  "if (!cr): pc = address",
+ {OK::LblOrExpr}},
+
+{"cala", "Call PA-Relative", "Control Flow", false,
+ "Pushes the return address and fp, then jumps to a pa-relative address. Labels are pa-relative here (function pointers, jump tables).",
+ "push(pc+4); push(fp); pc = pa + address",
+ {OK::LblOrExpr}},
+
+{"jmpa", "Jump PA-Relative", "Control Flow", false,
+ "Unconditional jump to a pa-relative address. Labels are pa-relative here.",
+ "pc = pa + address",
+ {OK::LblOrExpr}},
+
+{"jtra", "Jump If True PA-Relative", "Control Flow", false,
+ "Jumps to a pa-relative address if the cr register is set (non-zero).",
+ "if (cr): pc = pa + address",
+ {OK::LblOrExpr}},
+
+{"jfsa", "Jump If False PA-Relative", "Control Flow", false,
+ "Jumps to a pa-relative address if the cr register is clear (zero).",
+ "if (!cr): pc = pa + address",
  {OK::LblOrExpr}},
 
 // ── System ────────────────────────────────────────────────────────────────────

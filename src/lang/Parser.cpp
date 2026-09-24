@@ -1,5 +1,6 @@
 #include "lang/Parser.h"
 #include "lang/ExprParser.h"
+#include <algorithm>
 #include <span>
 
 namespace misa::lang {
@@ -29,6 +30,15 @@ const Token& Parser::consume() {
     return t;
 }
 
+void Parser::error(Span sp, std::string msg) {
+    m_diags.push_back({sp, lsp::DiagnosticSeverity::Error, std::move(msg)});
+}
+
+bool Parser::atLineEnd() const {
+    return atEnd() || current().is(TokenType::Newline) ||
+           current().is(TokenType::Comment) || current().is(TokenType::DocComment);
+}
+
 void Parser::skipNewlines() {
     while (!atEnd() && (current().is(TokenType::Newline) ||
                         current().is(TokenType::Comment)))
@@ -45,7 +55,7 @@ void Parser::skipToNewline() {
 ExprNode Parser::parseExprInLine() {
     // Feed remaining line tokens to ExprParser
     std::span<const Token> view(m_tokens.data(), m_tokens.size());
-    ExprParser ep(view, m_pos);
+    ExprParser ep(view, m_pos, &m_diags);
     ExprNode result = ep.parseExpr();
     m_pos = ep.pos();
     return result;
@@ -125,30 +135,33 @@ Statement Parser::parseDef() {
 
     bool isLocal = false;
     std::string name;
+    Span nameSpan = start;
 
     if (!atEnd() && current().is(TokenType::LocalIdent)) {
         name = current().text;
         if (!name.empty() && name[0] == '.') name = name.substr(1);
         isLocal = true;
-        consume();
+        nameSpan = consume().span;
     } else if (!atEnd() && current().is(TokenType::Ident)) {
         name = current().text;
-        consume();
+        nameSpan = consume().span;
     }
 
     ExprNode value = IntLitExpr{0, current().span};
-    if (!atEnd() && !current().is(TokenType::Newline))
+    if (!atLineEnd())
         value = parseExprInLine();
+    else if (!name.empty())
+        error(nameSpan, "Constant '" + name + "' has no value.");
 
-    Span sp{start.start, exprSpan(value).end};
-    return DefDirective{std::move(name), isLocal, std::move(value), sp};
+    Span sp{start.start, std::max(nameSpan.end, exprSpan(value).end)};
+    return DefDirective{std::move(name), isLocal, std::move(value), sp, nameSpan};
 }
 
 Statement Parser::parseUndef() {
     Span start = current().span;
     consume(); // 'undef'
-    std::string name;
-    if (!atEnd() && current().is(TokenType::Ident)) {
+    std::string name; // local constants keep their leading '.'
+    if (!atEnd() && (current().is(TokenType::Ident) || current().is(TokenType::LocalIdent))) {
         name = current().text;
         consume();
     }
@@ -215,6 +228,22 @@ Statement Parser::parseBmk(bool isSub) {
     return BmkDirective{isSub, std::move(label), Span{start.start, current().span.start}};
 }
 
+Statement Parser::parseInclude() {
+    Span start = current().span;
+    consume(); // 'include'
+    IncludeDirective inc;
+    if (!atEnd() && current().is(TokenType::StringLit)) {
+        inc.path     = current().text;
+        inc.hasPath  = true;
+        inc.pathSpan = current().span;
+        consume();
+    } else {
+        error(start, "'include' expects a quoted path, e.g. include \"lib/utils.asm\".");
+    }
+    inc.span = Span{start.start, inc.hasPath ? inc.pathSpan.end : start.end};
+    return inc;
+}
+
 Statement Parser::parseInstruction(Token mnemonic) {
     std::vector<OperandNode> ops = parseOperandList();
     Span sp{mnemonic.span.start, ops.empty() ? mnemonic.span.end : ops.back().span.end};
@@ -241,13 +270,17 @@ Statement Parser::parseLine() {
         if (tok.text == "res")  return parseRes();
         if (tok.text == "bmk")  return parseBmk(false);
         if (tok.text == "sbmk") return parseBmk(true);
+        if (tok.text == "include") return parseInclude();
         // Everything else is an instruction mnemonic
         Token mnemonic = consume();
         return parseInstruction(std::move(mnemonic));
     }
 
-    // Unexpected token on a line — skip it
+    // Unexpected token on a line — skip it. Error tokens were already reported
+    // by the lexer.
     Span sp = tok.span;
+    if (!tok.is(TokenType::Error))
+        error(sp, "Unexpected '" + tok.text + "' at the start of a statement.");
     skipToNewline();
     return EmptyStmt{sp};
 }
@@ -258,6 +291,14 @@ std::vector<Statement> Parser::parse() {
         skipNewlines();
         if (atEnd()) break;
         stmts.push_back(parseLine());
+        // A label may be followed by a statement on the same line (`lbl: emb …`).
+        if (std::holds_alternative<LabelDefStmt>(stmts.back())) continue;
+        if (!atLineEnd()) {
+            const Token& stray = current();
+            if (!stray.is(TokenType::Error))
+                error(stray.span, "Unexpected '" + stray.text + "'; expected end of line.");
+            skipToNewline();
+        }
         // Consume trailing comment if any
         if (!atEnd() && current().is(TokenType::Comment)) consume();
         if (!atEnd() && current().is(TokenType::Newline)) consume();

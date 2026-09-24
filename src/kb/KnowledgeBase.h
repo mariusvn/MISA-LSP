@@ -116,7 +116,8 @@ public:
 
     // Built-in entry point names
     static constexpr std::string_view ENTRY_POINTS[] = {
-        "_start", "_update", "_draw", "_input"
+        "_start", "_update", "_draw", "_input",
+        "_mouse_button_input", "_keyboard_input", "_terminal_input"
     };
 
 private:

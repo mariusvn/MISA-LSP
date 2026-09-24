@@ -10,7 +10,9 @@ namespace misa::lang {
 // Consumes tokens from a view; the caller manages the token stream.
 class ExprParser {
 public:
-    explicit ExprParser(std::span<const Token> tokens, size_t startPos = 0);
+    // `diags`, when given, receives syntax errors such as a missing ')'.
+    explicit ExprParser(std::span<const Token> tokens, size_t startPos = 0,
+                        std::vector<SyntaxDiagnostic>* diags = nullptr);
 
     // Parse one expression. Returns the AST node.
     ExprNode parseExpr(int minPrec = 0);
@@ -21,8 +23,9 @@ public:
     const Token& current() const;
 
 private:
-    std::span<const Token> m_tokens;
-    size_t                 m_pos;
+    std::span<const Token>         m_tokens;
+    size_t                         m_pos;
+    std::vector<SyntaxDiagnostic>* m_diags;
 
     const Token& peek(int offset = 0) const;
     const Token& consume();
